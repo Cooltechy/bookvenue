@@ -240,7 +240,8 @@ router.get('/:id/permission-document', authMiddleware, async (req, res, next) =>
 // Approve a booking (admin only)
 router.put('/:id/approve', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
-    const booking = await bookingService.approveBooking(req.params.id, req.user.id);
+    const { waiveCharges = false } = req.body;
+    const booking = await bookingService.approveBooking(req.params.id, req.user.id, waiveCharges);
     res.status(200).json(booking);
   } catch (error) {
     next(error);

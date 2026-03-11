@@ -509,8 +509,8 @@ class BookingService {
     return bookings.filter(b => b.status !== 'cancelled');
   }
 
-  // Approve a booking (admin only) - Moves to payment pending stage
-  async approveBooking(bookingId, adminId) {
+  // Approve a booking (admin only) - Moves to payment pending stage or completed if charges waived
+  async approveBooking(bookingId, adminId, waiveCharges = false) {
     const booking = await this.getBookingById(bookingId);
     
     if (booking.status !== 'pending_approval') {
@@ -540,13 +540,32 @@ class BookingService {
       }
     }
 
-    const approved = await bookingRepository.update(bookingId, {
-      status: 'payment_pending',
-      workflowStage: 'approved_awaiting_payment',
-      paymentStatus: 'pending',
-      approvedBy: adminId,
-      approvalDate: new Date()
-    });
+    let updateData;
+    
+    if (waiveCharges) {
+      // If charges are waived, mark booking as completed directly
+      updateData = {
+        status: 'payment_completed',
+        workflowStage: 'payment_completed',
+        paymentStatus: 'waived',
+        chargesWaived: true,
+        chargesWaivedBy: adminId,
+        chargesWaivedDate: new Date(),
+        approvedBy: adminId,
+        approvalDate: new Date()
+      };
+    } else {
+      // Normal flow - require payment
+      updateData = {
+        status: 'payment_pending',
+        workflowStage: 'approved_awaiting_payment',
+        paymentStatus: 'pending',
+        approvedBy: adminId,
+        approvalDate: new Date()
+      };
+    }
+
+    const approved = await bookingRepository.update(bookingId, updateData);
 
     if (!approved) {
       throw new NotFoundError('Booking not found');
@@ -555,12 +574,18 @@ class BookingService {
     // Auto-reject all other pending bookings that overlap with this approved booking
     await this.autoRejectOverlappingBookings(approved);
 
-    // Send notification to user about approval and payment requirement
-    await this.sendPaymentRequiredNotification(approved);
+    // Send notification to user
+    if (waiveCharges) {
+      await this.sendChargesWaivedNotification(approved);
+    } else {
+      await this.sendPaymentRequiredNotification(approved);
+    }
 
     return {
       booking: approved,
-      message: 'Booking approved. User has been notified to complete the payment. Overlapping pending requests have been automatically rejected.'
+      message: waiveCharges 
+        ? 'Booking approved with charges waived. User has been notified that no payment is required. Overlapping pending requests have been automatically rejected.'
+        : 'Booking approved. User has been notified to complete the payment. Overlapping pending requests have been automatically rejected.'
     };
   }
 
@@ -607,6 +632,11 @@ class BookingService {
   async sendPaymentRequiredNotification(booking) {
     // This would integrate with notification service
     console.log(`Booking ${booking._id} approved. Payment required.`);
+  }
+
+  async sendChargesWaivedNotification(booking) {
+    // This would integrate with notification service
+    console.log(`Booking ${booking._id} approved with charges waived. No payment required.`);
   }
 
   // Reject a booking (admin only)

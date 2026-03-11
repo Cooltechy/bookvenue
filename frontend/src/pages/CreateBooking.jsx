@@ -448,6 +448,9 @@ export default function CreateBooking() {
                       <p className="text-lg font-bold pt-2 border-t border-emerald-300 mt-2">
                         Total: {pricing.currency} {pricing.price}
                       </p>
+                      <p className="text-xs text-emerald-700 pt-2 border-t border-emerald-200 mt-2">
+                        💡 Note: In certain cases, the admin may waive the charges for your booking. If charges are waived, no payment will be required.
+                      </p>
                     </div>
                   </div>
                 </div>

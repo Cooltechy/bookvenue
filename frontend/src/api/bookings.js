@@ -62,8 +62,8 @@ export const bookingsAPI = {
   },
 
   // Admin: Approve booking
-  approveBooking: (id) => {
-    return client.put(`/bookings/${id}/approve`)
+  approveBooking: (id, waiveCharges = false) => {
+    return client.put(`/bookings/${id}/approve`, { waiveCharges })
   },
 
   // Admin: Reject booking

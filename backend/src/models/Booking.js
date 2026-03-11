@@ -79,9 +79,25 @@ const bookingSchema = new mongoose.Schema({
   },
   paymentStatus: {
     type: String,
-    enum: ['not_required', 'pending', 'completed', 'failed', 'refunded'],
+    enum: ['not_required', 'pending', 'completed', 'failed', 'refunded', 'waived'],
     default: 'not_required',
     description: 'Payment status for the booking'
+  },
+  chargesWaived: {
+    type: Boolean,
+    default: false,
+    description: 'Whether the admin has waived the charges for this booking'
+  },
+  chargesWaivedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    description: 'Admin who waived the charges'
+  },
+  chargesWaivedDate: {
+    type: Date,
+    default: null,
+    description: 'When the charges were waived'
   },
   paymentDetails: {
     transactionId: {

@@ -128,7 +128,7 @@ export default function MyBookings() {
                       {booking.venueId?.location || 'Location'}
                     </p>
                   </div>
-                  <StatusBadge status={booking.status} workflowStage={booking.workflowStage} />
+                  <StatusBadge status={booking.status} workflowStage={booking.workflowStage} chargesWaived={booking.chargesWaived} />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -164,10 +164,18 @@ export default function MyBookings() {
                   </div>
                 )}
 
-                {booking.status === 'payment_pending' && (
+                {booking.status === 'payment_pending' && !booking.chargesWaived && (
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
                     <p className="text-sm text-orange-800 font-medium">
                       ⚠️ Your booking has been approved! Please complete the payment to confirm your booking.
+                    </p>
+                  </div>
+                )}
+
+                {booking.status === 'payment_completed' && booking.chargesWaived && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-green-800 font-medium">
+                      ✓ Your booking has been approved with charges waived. No payment is required!
                     </p>
                   </div>
                 )}
@@ -181,7 +189,7 @@ export default function MyBookings() {
                     Download Permission
                   </button>
 
-                  {booking.status === 'payment_pending' && (
+                  {booking.status === 'payment_pending' && !booking.chargesWaived && (
                     <button
                       onClick={() => handleMakePayment(booking)}
                       className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition text-sm font-medium"

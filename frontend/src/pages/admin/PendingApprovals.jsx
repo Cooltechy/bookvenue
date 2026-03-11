@@ -16,6 +16,7 @@ export default function PendingApprovals() {
   const [showConflictsModal, setShowConflictsModal] = useState(false)
   const [selectedBookingForConflicts, setSelectedBookingForConflicts] = useState(null)
   const [conflictingBookings, setConflictingBookings] = useState([])
+  const [waiveCharges, setWaiveCharges] = useState(false)
 
   useEffect(() => {
     fetchPendingBookings()
@@ -62,14 +63,17 @@ export default function PendingApprovals() {
 
   const handleApprove = async () => {
     try {
-      const response = await bookingsAPI.approveBooking(selectedBooking._id)
+      const response = await bookingsAPI.approveBooking(selectedBooking._id, waiveCharges)
       setShowApproveModal(false)
       setSelectedBooking(null)
+      setWaiveCharges(false)
       setPopup({
         isOpen: true,
         type: 'success',
         title: 'Booking Approved',
-        message: response.data.message || 'Booking has been approved. User will be notified to make payment.',
+        message: response.data.message || (waiveCharges 
+          ? 'Booking has been approved with charges waived. User will be notified that no payment is required.'
+          : 'Booking has been approved. User will be notified to make payment.'),
         actions: [
           {
             label: 'OK',
@@ -84,6 +88,7 @@ export default function PendingApprovals() {
     } catch (err) {
       setShowApproveModal(false)
       setSelectedBooking(null)
+      setWaiveCharges(false)
       setPopup({
         isOpen: true,
         type: 'error',
@@ -542,9 +547,48 @@ export default function PendingApprovals() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Approve Booking</h2>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to approve this booking? The user will be notified to complete the payment.
+            
+            {selectedBooking && (
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-700 mb-2">
+                  <span className="font-semibold">Venue:</span> {selectedBooking.venueId?.name}
+                </p>
+                <p className="text-sm text-gray-700 mb-2">
+                  <span className="font-semibold">User:</span> {selectedBooking.userId?.name}
+                </p>
+                <p className="text-sm text-gray-700 font-semibold">
+                  <span className="font-semibold">Amount:</span> {selectedBooking.currency} {selectedBooking.price}
+                </p>
+              </div>
+            )}
+            
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to approve this booking?
             </p>
+            
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={waiveCharges}
+                  onChange={(e) => setWaiveCharges(e.target.checked)}
+                  className="mt-1 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <span className="font-semibold text-gray-800 block mb-1">Waive Charges</span>
+                  <span className="text-sm text-gray-600">
+                    Check this box to waive the booking charges. The user will not be required to make any payment.
+                  </span>
+                </div>
+              </label>
+            </div>
+            
+            <p className="text-sm text-gray-500 mb-6">
+              {waiveCharges 
+                ? '✓ User will be notified that the booking is confirmed with no payment required.'
+                : 'User will be notified to complete the payment.'}
+            </p>
+            
             <div className="flex gap-2">
               <button
                 onClick={handleApprove}
@@ -556,6 +600,7 @@ export default function PendingApprovals() {
                 onClick={() => {
                   setShowApproveModal(false)
                   setSelectedBooking(null)
+                  setWaiveCharges(false)
                 }}
                 className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-300 transition"
               >
