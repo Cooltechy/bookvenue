@@ -181,6 +181,13 @@ export default function CreateBooking() {
         return
       }
       
+      // Check if all slots between start and end are continuous
+      const isContinuous = checkContinuousSlots(startHour, endHour)
+      if (!isContinuous) {
+        setError('Selected time range contains unavailable slots. Please select continuous available time slots only.')
+        return
+      }
+      
       setSelectedSlot({
         startTime: selectedSlot.startTime,
         endTime: slot.endTime,
@@ -189,6 +196,21 @@ export default function CreateBooking() {
       })
     }
     setError('')
+  }
+
+  const checkContinuousSlots = (startHour, endHour) => {
+    // Check if all hours between startHour and endHour exist in availableSlots
+    for (let hour = startHour; hour < endHour; hour++) {
+      const slotExists = availableSlots.some(slot => {
+        const slotHour = parseInt(slot.startTime.split(':')[0])
+        return slotHour === hour
+      })
+      
+      if (!slotExists) {
+        return false
+      }
+    }
+    return true
   }
 
   const isSlotInRange = (slot) => {
@@ -377,7 +399,7 @@ export default function CreateBooking() {
                 {loadingSlots ? (
                   <div className="text-center py-8 text-gray-500">Loading time slots...</div>
                 ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                     {availableSlots.map((slot, idx) => {
                       const isSelected = selectedSlot && selectedSlot.startTime === slot.startTime
                       const isInRange = isSlotInRange(slot)
@@ -395,7 +417,11 @@ export default function CreateBooking() {
                               : 'bg-gray-100 text-gray-800 hover:bg-emerald-50 border border-gray-300 hover:border-emerald-300'
                           }`}
                         >
-                          {slot.startTime}
+                          <div className="text-xs leading-tight">
+                            {slot.startTime}
+                            <span className="block text-[10px] opacity-75">to</span>
+                            {slot.endTime}
+                          </div>
                         </button>
                       )
                     })}
