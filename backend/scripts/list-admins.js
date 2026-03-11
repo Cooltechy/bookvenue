@@ -1,6 +1,27 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('../src/models/User');
+const axios = require('axios');
+
+async function getUserFromUniversityDB(email) {
+  try {
+    const apiUrl = process.env.UNIVERSITY_DB_API_URL || 'http://localhost:3002';
+    const apiKey = process.env.UNIVERSITY_DB_API_KEY;
+    
+    const response = await axios.get(
+      `${apiUrl}/api/users/email/${email}`,
+      {
+        headers: {
+          'x-api-key': apiKey
+        }
+      }
+    );
+    
+    return response.data.user;
+  } catch (error) {
+    return null;
+  }
+}
 
 async function listAdmins() {
   try {
@@ -10,12 +31,12 @@ async function listAdmins() {
 
     // Find all super admins
     const superAdmins = await User.find({ role: 'super_admin' })
-      .select('email firstName lastName department createdAt')
+      .select('email createdAt')
       .sort({ createdAt: -1 });
 
     // Find all admins
     const admins = await User.find({ role: 'admin' })
-      .select('email firstName lastName department createdAt')
+      .select('email createdAt')
       .sort({ createdAt: -1 });
 
     console.log('\n========================================');
@@ -26,14 +47,18 @@ async function listAdmins() {
       console.log('No super admins found.');
     } else {
       console.log(`Total: ${superAdmins.length}\n`);
-      superAdmins.forEach((user, index) => {
-        console.log(`${index + 1}. ${user.firstName} ${user.lastName}`);
+      for (let index = 0; index < superAdmins.length; index++) {
+        const user = superAdmins[index];
+        const universityUser = await getUserFromUniversityDB(user.email);
+        
+        console.log(`${index + 1}. ${universityUser?.name || ''}`);
         console.log(`   Email: ${user.email}`);
-        console.log(`   Department: ${user.department || 'N/A'}`);
+        console.log(`   Type: ${universityUser?.type || 'N/A'}`);
+        console.log(`   Department: ${universityUser?.department || 'N/A'}`);
         console.log(`   Created: ${user.createdAt.toLocaleString()}`);
         console.log(`   ID: ${user._id}`);
         console.log('');
-      });
+      }
     }
 
     console.log('========================================');
@@ -44,14 +69,18 @@ async function listAdmins() {
       console.log('No admins found.');
     } else {
       console.log(`Total: ${admins.length}\n`);
-      admins.forEach((user, index) => {
-        console.log(`${index + 1}. ${user.firstName} ${user.lastName}`);
+      for (let index = 0; index < admins.length; index++) {
+        const user = admins[index];
+        const universityUser = await getUserFromUniversityDB(user.email);
+        
+        console.log(`${index + 1}. ${universityUser?.name || ''}`);
         console.log(`   Email: ${user.email}`);
-        console.log(`   Department: ${user.department || 'N/A'}`);
+        console.log(`   Type: ${universityUser?.type || 'N/A'}`);
+        console.log(`   Department: ${universityUser?.department || 'N/A'}`);
         console.log(`   Created: ${user.createdAt.toLocaleString()}`);
         console.log(`   ID: ${user._id}`);
         console.log('');
-      });
+      }
     }
 
     console.log('========================================');

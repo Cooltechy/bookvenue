@@ -33,7 +33,7 @@ class BookingRepository {
 
   async findAll() {
     return await Booking.find({})
-      .populate('userId', 'firstName lastName email')
+      .populate('userId', 'email')
       .populate('venueId', 'name location')
       .sort({ createdAt: -1 });
   }
@@ -53,7 +53,7 @@ class BookingRepository {
   async findConfirmedByVenueId(venueId) {
     return await Booking.find({
       venueId,
-      status: { $in: ['pending_approval', 'payment_pending', 'payment_completed'] }
+      status: { $in: ['payment_pending', 'payment_completed'] }
     }).sort({ startTime: 1 });
   }
 
@@ -73,10 +73,10 @@ class BookingRepository {
       .sort({ createdAt: -1 });
   }
 
-  async checkConflict(venueId, startTime, endTime, excludeBookingId) {
+  async checkConflict(venueId, startTime, endTime, excludeBookingId, statusesToCheck = ['pending_approval', 'payment_pending', 'payment_completed']) {
     const query = {
       venueId,
-      status: { $in: ['pending_approval', 'payment_pending', 'payment_completed'] },
+      status: { $in: statusesToCheck },
       $or: [
         {
           startTime: { $lt: endTime },

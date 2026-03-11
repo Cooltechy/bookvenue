@@ -129,7 +129,7 @@ export default function Venues() {
           <div className="flex-1"></div>
           <div className="flex-1 text-center">
             <h1 className="text-3xl font-bold text-white mb-2">Venue Booking</h1>
-            <p className="text-emerald-100 text-lg">Welcome, {user?.firstName} {user?.lastName}</p>
+            <p className="text-emerald-100 text-lg">Welcome, {user?.name || user?.email?.split('@')[0]}</p>
           </div>
           <div className="flex-1 flex justify-end gap-4">
             <button
@@ -226,7 +226,7 @@ export default function Venues() {
                   {venue.ownerId && (
                     <div className="flex items-center text-gray-700">
                       <span className="text-sm">
-                        <span className="font-medium text-gray-800">Managed by:</span> {venue.ownerId.firstName} {venue.ownerId.lastName}
+                        <span className="font-medium text-gray-800">Managed by:</span> {venue.ownerId.name}
                       </span>
                     </div>
                   )}

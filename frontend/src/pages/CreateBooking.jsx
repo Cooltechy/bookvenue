@@ -25,6 +25,7 @@ export default function CreateBooking() {
   const [minBookingDate, setMinBookingDate] = useState('')
   const [minAdvanceDays, setMinAdvanceDays] = useState(10)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [confirmedBookings, setConfirmedBookings] = useState([])
 
   useEffect(() => {
     fetchVenue()
@@ -33,9 +34,29 @@ export default function CreateBooking() {
 
   useEffect(() => {
     if (formData.date) {
-      generateTimeSlots()
+      fetchConfirmedBookingsAndGenerateSlots()
     }
   }, [formData.date])
+
+  const fetchConfirmedBookingsAndGenerateSlots = async () => {
+    if (!formData.date || !venueId) return
+    
+    setLoadingSlots(true)
+    
+    try {
+      // First fetch confirmed bookings
+      const response = await bookingsAPI.getConfirmedBookings(venueId, formData.date)
+      setConfirmedBookings(response.data)
+      
+      // Then generate slots with the confirmed bookings data
+      generateTimeSlotsWithConfirmed(response.data)
+    } catch (err) {
+      console.error('Failed to fetch confirmed bookings:', err)
+      setConfirmedBookings([])
+      // Generate slots anyway even if fetch fails
+      generateTimeSlotsWithConfirmed([])
+    }
+  }
 
   const fetchVenue = async () => {
     try {
@@ -61,13 +82,12 @@ export default function CreateBooking() {
     }
   }
 
-  const generateTimeSlots = () => {
+  const generateTimeSlotsWithConfirmed = (confirmedBookingsData) => {
     if (!formData.date || !venue) {
       setAvailableSlots([])
+      setLoadingSlots(false)
       return
     }
-    
-    setLoadingSlots(true)
     
     // Get day of week for selected date (0 = Sunday, 1 = Monday, etc.)
     const selectedDate = new Date(formData.date)
@@ -92,7 +112,18 @@ export default function CreateBooking() {
     const [toHour] = dayAvailability.endTime.split(':').map(Number)
     
     // Generate hourly slots within venue's available hours for this day
+    // Filter out confirmed bookings
     for (let hour = fromHour; hour < toHour; hour++) {
+      // Check if this hour falls within any confirmed booking
+      const isConfirmed = confirmedBookingsData.some(booking => {
+        return hour >= booking.startHour && hour < booking.endHour
+      })
+      
+      // Skip this slot if it's part of a confirmed booking
+      if (isConfirmed) {
+        continue
+      }
+      
       const startTime = `${hour.toString().padStart(2, '0')}:00`
       const endHour = hour + 1
       const endTime = `${endHour.toString().padStart(2, '0')}:00`

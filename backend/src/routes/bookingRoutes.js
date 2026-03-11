@@ -49,6 +49,23 @@ router.get('/availability/:venueId', async (req, res, next) => {
   }
 });
 
+// Get confirmed bookings for a venue on a specific date (public endpoint)
+router.get('/confirmed/:venueId', async (req, res, next) => {
+  try {
+    const { venueId } = req.params;
+    const { date } = req.query;
+    
+    if (!date) {
+      return res.status(400).json({ message: 'Date query parameter is required' });
+    }
+    
+    const bookings = await bookingService.getConfirmedBookingsForDate(venueId, date);
+    res.status(200).json(bookings);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Check if a specific slot is available (with conflict details)
 router.post('/check-availability', authMiddleware, async (req, res, next) => {
   try {

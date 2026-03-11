@@ -101,7 +101,7 @@ export default function Dashboard() {
             </div>
             <div>
               <h2 className="text-2xl font-bold text-gray-900">
-                {user?.firstName} {user?.lastName}
+                {user?.name || user?.email?.split('@')[0]}
               </h2>
               <p className="text-gray-600">{user?.email}</p>
             </div>
@@ -112,7 +112,7 @@ export default function Dashboard() {
             <div className="mb-4">
               <p className="text-sm font-medium text-gray-600 mb-2">Your Name</p>
               <p className="text-lg font-semibold text-gray-900">
-                {user?.firstName} {user?.lastName}
+                {user?.name || user?.email?.split('@')[0]}
               </p>
             </div>
             <p className="text-sm font-medium text-gray-600 mb-2">Your User ID</p>

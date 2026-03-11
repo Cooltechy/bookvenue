@@ -1,7 +1,35 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const axios = require('axios');
 const User = require('../src/models/User');
+
+// Function to verify user exists in university database
+async function verifyUniversityEmail(email) {
+  try {
+    const apiUrl = process.env.UNIVERSITY_DB_API_URL || 'http://localhost:3002';
+    const apiKey = process.env.UNIVERSITY_DB_API_KEY;
+    
+    const response = await axios.get(
+      `${apiUrl}/api/users/email/${email}`,
+      {
+        headers: {
+          'x-api-key': apiKey
+        }
+      }
+    );
+    
+    return {
+      exists: true,
+      user: response.data.user
+    };
+  } catch (error) {
+    if (error.response && error.response.status === 404) {
+      return { exists: false, user: null };
+    }
+    throw new Error('Unable to connect to university database');
+  }
+}
 
 const createSuperAdmin = async () => {
   try {
@@ -10,44 +38,57 @@ const createSuperAdmin = async () => {
     await mongoose.connect(mongoURI);
     console.log('✅ Connected to MongoDB\n');
 
-    // Get email from command line (optional)
+    // Get email from command line (REQUIRED)
     const email = process.argv[2];
 
-    // MODE 1: Promote existing user to super admin
-    if (email) {
-      // Validate email domain
-      if (!email.toLowerCase().endsWith('@uohyd.ac.in')) {
-        console.log('❌ Email must be a university email (@uohyd.ac.in)');
-        process.exit(1);
-      }
+    if (!email) {
+      console.log('❌ Email is required!\n');
+      console.log('Usage:');
+      console.log('  node scripts/create-super-admin.js <email>');
+      console.log('  Example: node scripts/create-super-admin.js user@uohyd.ac.in');
+      process.exit(1);
+    }
 
-      // Find existing user
-      const existingUser = await User.findOne({ email: email.toLowerCase() });
-      
-      if (!existingUser) {
-        console.log('❌ User not found with email:', email);
-        console.log('\n💡 To create a new super admin account, run without arguments:');
-        console.log('   node scripts/create-super-admin-custom.js');
-        process.exit(1);
-      }
+    // Validate email domain
+    if (!email.toLowerCase().endsWith('@uohyd.ac.in')) {
+      console.log('❌ Email must be a university email (@uohyd.ac.in)');
+      process.exit(1);
+    }
 
-      // Check if already super admin
+    const normalizedEmail = email.toLowerCase();
+
+    // Step 1: Check if user exists in local database
+    console.log('🔍 Checking local database...');
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    
+    if (existingUser) {
+      // User exists in local database - promote them
       if (existingUser.role === 'super_admin') {
         console.log('ℹ️  User is already a super admin\n');
         console.log('📋 Super Admin Details:');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('Email:', existingUser.email);
-        console.log('Name:', `${existingUser.firstName} ${existingUser.lastName}`);
         console.log('Role: super_admin');
-        console.log('Department:', existingUser.department || 'Not specified');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         process.exit(0);
       }
 
-      // Store old role
-      const oldRole = existingUser.role;
+      // Verify user is faculty or staff before promoting
+      console.log('🔍 Verifying user type in university database...');
+      const universityVerification = await verifyUniversityEmail(normalizedEmail);
+      
+      if (!universityVerification.exists) {
+        console.log('❌ Email not found in university database');
+        process.exit(1);
+      }
 
-      // Promote to super admin
+      if (universityVerification.user.type === 'student') {
+        console.log('\n❌ Students cannot be made super admin');
+        console.log('⚠️  Only faculty and staff members can be assigned super admin role');
+        process.exit(1);
+      }
+
+      const oldRole = existingUser.role;
       existingUser.role = 'super_admin';
       await existingUser.save();
 
@@ -55,10 +96,8 @@ const createSuperAdmin = async () => {
       console.log('📋 Updated User Details:');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('Email:', existingUser.email);
-      console.log('Name:', `${existingUser.firstName} ${existingUser.lastName}`);
       console.log('Previous Role:', oldRole);
       console.log('New Role: super_admin');
-      console.log('Department:', existingUser.department || 'Not specified');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('\n✅ Super admin can now:');
       console.log('  - Manage all admins (create, edit, delete, promote, demote)');
@@ -70,63 +109,49 @@ const createSuperAdmin = async () => {
       process.exit(0);
     }
 
-    // MODE 2: Create default super admin account
-    console.log('📝 Creating default super admin account...\n');
-
-    const defaultData = {
-      firstName: 'Super',
-      lastName: 'Admin',
-      email: 'superadmin@uohyd.ac.in',
-      password: 'superadmin123',
-      role: 'super_admin',
-      department: 'Administration',
-      studentId: 'SUPERADMIN001'
-    };
-
-    // Check if default super admin already exists
-    const existingAdmin = await User.findOne({ email: defaultData.email });
-    if (existingAdmin) {
-      console.log('⚠️  Default super admin already exists with email:', defaultData.email);
-      
-      // Update to super_admin role if not already
-      if (existingAdmin.role !== 'super_admin') {
-        existingAdmin.role = 'super_admin';
-        await existingAdmin.save();
-        console.log('✅ Updated existing user to super_admin role\n');
-      } else {
-        console.log('ℹ️  User is already a super admin\n');
-      }
-      
-      console.log('📋 Super Admin Login Credentials:');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('Email:', defaultData.email);
-      console.log('Role: super_admin');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('\n💡 To promote an existing user to super admin:');
-      console.log('   node scripts/create-super-admin-custom.js user@uohyd.ac.in');
-      process.exit(0);
+    // Step 2: User not in local database - verify with university database
+    console.log('👤 User not found in local database');
+    console.log('🔍 Verifying with university database...');
+    
+    const universityVerification = await verifyUniversityEmail(normalizedEmail);
+    
+    if (!universityVerification.exists) {
+      console.log('❌ Email not found in university database');
+      console.log('\n⚠️  Only users registered in the university database can be made super admin');
+      console.log('Please ensure the email exists in the university system first.');
+      process.exit(1);
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(defaultData.password, 10);
+    const universityUser = universityVerification.user;
+    console.log('✅ User found in university database');
+    console.log(`   Name: ${universityUser.name}`);
+    console.log(`   Type: ${universityUser.type}`);
+    console.log(`   Department: ${universityUser.department || 'N/A'}`);
 
-    // Create super admin user
-    const admin = new User({
-      firstName: defaultData.firstName,
-      lastName: defaultData.lastName,
-      email: defaultData.email.toLowerCase(),
+    // Check if user is faculty or staff (not student)
+    if (universityUser.type === 'student') {
+      console.log('\n❌ Students cannot be made super admin');
+      console.log('⚠️  Only faculty and staff members can be assigned super admin role');
+      process.exit(1);
+    }
+
+    // Step 3: Create new super admin with default password
+    const defaultPassword = 'superadmin123';
+    const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+
+    const newSuperAdmin = new User({
+      email: normalizedEmail,
       password: hashedPassword,
-      role: defaultData.role,
-      department: defaultData.department,
-      studentId: defaultData.studentId
+      role: 'super_admin'
     });
 
-    await admin.save();
-    console.log('✅ Default super admin created successfully!\n');
+    await newSuperAdmin.save();
+    
+    console.log('\n✅ Super admin created successfully!\n');
     console.log('📋 Super Admin Login Credentials:');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('Email:', defaultData.email);
-    console.log('Password:', defaultData.password);
+    console.log('Email:', normalizedEmail);
+    console.log('Password:', defaultPassword);
     console.log('Role: super_admin');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('\n✅ Super admin can:');
@@ -134,9 +159,8 @@ const createSuperAdmin = async () => {
     console.log('  - Transfer venues between admins');
     console.log('  - Reset admin passwords');
     console.log('  - View all users and system data');
+    console.log('  - Full system access');
     console.log('\n⚠️  IMPORTANT: Change the password after first login!');
-    console.log('\n💡 To promote another user to super admin:');
-    console.log('   node scripts/create-super-admin-custom.js user@uohyd.ac.in');
     
     process.exit(0);
   } catch (error) {
@@ -147,12 +171,8 @@ const createSuperAdmin = async () => {
 
 console.log('👑 Super Admin Management\n');
 console.log('Usage:');
-console.log('  Create default super admin:');
-console.log('    node scripts/create-super-admin-custom.js');
-console.log('');
-console.log('  Promote existing user to super admin:');
-console.log('    node scripts/create-super-admin-custom.js <email>');
-console.log('    Example: node scripts/create-super-admin-custom.js user@uohyd.ac.in');
+console.log('  node scripts/create-super-admin.js <email>');
+console.log('  Example: node scripts/create-super-admin.js user@uohyd.ac.in');
 console.log('');
 
 createSuperAdmin();

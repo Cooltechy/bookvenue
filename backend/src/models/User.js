@@ -12,25 +12,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  firstName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  lastName: {
-    type: String,
-    required: true,
-    trim: true
-  },
   role: {
     type: String,
     enum: ['user', 'admin', 'super_admin'],
     default: 'user'
-  },
-  department: {
-    type: String,
-    trim: true,
-    default: ''
   }
 }, {
   timestamps: true,

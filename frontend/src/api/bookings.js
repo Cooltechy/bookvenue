@@ -15,6 +15,11 @@ export const bookingsAPI = {
     return client.post('/bookings/check-availability', data)
   },
 
+  // Get confirmed bookings for a venue on a specific date
+  getConfirmedBookings: (venueId, date) => {
+    return client.get(`/bookings/confirmed/${venueId}?date=${date}`)
+  },
+
   // Get user's bookings
   getMyBookings: () => {
     return client.get('/bookings/my-bookings')
