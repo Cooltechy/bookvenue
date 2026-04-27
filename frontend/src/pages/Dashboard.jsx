@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { ArrowLeft, Copy, Calendar, MapPin, Clock, User } from 'lucide-react'
+import NotificationIcon from '../components/NotificationIcon'
 
 export default function Dashboard() {
   const [bookings, setBookings] = useState([])
@@ -82,12 +83,15 @@ export default function Dashboard() {
             Back to Venues
           </button>
           <h1 className="text-3xl font-bold text-white">My Dashboard</h1>
-          <button
-            onClick={handleLogout}
-            className="text-white hover:bg-white hover:bg-opacity-20 px-4 py-2 rounded-lg transition"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-4">
+            <NotificationIcon />
+            <button
+              onClick={handleLogout}
+              className="text-white hover:bg-white hover:bg-opacity-20 px-4 py-2 rounded-lg transition"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 
@@ -146,22 +150,20 @@ export default function Dashboard() {
             <div className="mb-6 flex flex-wrap gap-2 border-b border-gray-200 pb-4">
               <button
                 onClick={() => setActiveTab('all')}
-                className={`px-4 py-2 rounded-lg font-medium transition ${
-                  activeTab === 'all'
+                className={`px-4 py-2 rounded-lg font-medium transition ${activeTab === 'all'
                     ? 'bg-emerald-100 text-emerald-700'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                  }`}
               >
                 All ({stats.all})
               </button>
               {stats.pending > 0 && (
                 <button
                   onClick={() => setActiveTab('pending')}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${
-                    activeTab === 'pending'
+                  className={`px-4 py-2 rounded-lg font-medium transition ${activeTab === 'pending'
                       ? 'bg-yellow-100 text-yellow-700'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                    }`}
                 >
                   ⏳ Pending ({stats.pending})
                 </button>
@@ -169,11 +171,10 @@ export default function Dashboard() {
               {stats.approved > 0 && (
                 <button
                   onClick={() => setActiveTab('approved')}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${
-                    activeTab === 'approved'
+                  className={`px-4 py-2 rounded-lg font-medium transition ${activeTab === 'approved'
                       ? 'bg-green-100 text-green-700'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                    }`}
                 >
                   ✓ Approved ({stats.approved})
                 </button>
@@ -181,11 +182,10 @@ export default function Dashboard() {
               {stats.rejected > 0 && (
                 <button
                   onClick={() => setActiveTab('rejected')}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${
-                    activeTab === 'rejected'
+                  className={`px-4 py-2 rounded-lg font-medium transition ${activeTab === 'rejected'
                       ? 'bg-red-100 text-red-700'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                    }`}
                 >
                   ✗ Rejected ({stats.rejected})
                 </button>
@@ -193,11 +193,10 @@ export default function Dashboard() {
               {stats.cancelled > 0 && (
                 <button
                   onClick={() => setActiveTab('cancelled')}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${
-                    activeTab === 'cancelled'
+                  className={`px-4 py-2 rounded-lg font-medium transition ${activeTab === 'cancelled'
                       ? 'bg-gray-400 text-gray-700'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                    }`}
                 >
                   ✗ Cancelled ({stats.cancelled})
                 </button>
@@ -222,7 +221,7 @@ export default function Dashboard() {
               <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-600 text-lg">No {activeTab !== 'all' ? activeTab : ''} bookings</p>
               <p className="text-gray-500 text-sm mt-2">
-                {activeTab === 'all' 
+                {activeTab === 'all'
                   ? 'Start booking venues to see your history here'
                   : `You don't have any ${activeTab} bookings`}
               </p>
@@ -304,15 +303,14 @@ export default function Dashboard() {
                         <div>
                           <p className="text-sm text-gray-600 mb-2">Status</p>
                           <span
-                            className={`inline-block px-4 py-2 rounded-full text-sm font-medium ${
-                              booking.status === 'approved'
+                            className={`inline-block px-4 py-2 rounded-full text-sm font-medium ${booking.status === 'approved'
                                 ? 'bg-green-100 text-green-800'
                                 : booking.status === 'pending'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : booking.status === 'rejected'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-gray-100 text-gray-800'
-                            }`}
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : booking.status === 'rejected'
+                                    ? 'bg-red-100 text-red-800'
+                                    : 'bg-gray-100 text-gray-800'
+                              }`}
                           >
                             {booking.status === 'approved' && '✓ Approved'}
                             {booking.status === 'pending' && '⏳ Pending Approval'}
