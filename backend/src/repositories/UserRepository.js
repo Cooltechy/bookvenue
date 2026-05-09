@@ -50,6 +50,10 @@ class UserRepository {
   async findAll() {
     return await User.find({});
   }
+
+  async findByRole(role) {
+    return await User.find({ role });
+  }
 }
 
 module.exports = new UserRepository();

@@ -2,11 +2,14 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { bookingsAPI } from '../api/bookings'
 import StatusBadge from '../components/StatusBadge'
-import { Calendar, Clock, MapPin, FileText, Download, CreditCard, XCircle } from 'lucide-react'
+import { Calendar, Clock, MapPin, FileText, Download, CreditCard, XCircle, ArrowLeft, LogOut } from 'lucide-react'
 import Popup from '../components/Popup'
+import NotificationIcon from '../components/NotificationIcon'
+import { useAuth } from '../context/AuthContext'
 
 export default function MyBookings() {
   const navigate = useNavigate()
+  const { logout, user } = useAuth()
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [popup, setPopup] = useState({ isOpen: false })
@@ -45,6 +48,11 @@ export default function MyBookings() {
         message: 'Failed to download permission document'
       })
     }
+  }
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
   }
 
   const handleMakePayment = (booking) => {
@@ -100,9 +108,32 @@ export default function MyBookings() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-gradient-to-r from-emerald-600 to-teal-600 shadow-lg mb-8">
+        <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
+          <button
+            onClick={() => navigate('/venues')}
+            className="flex items-center gap-2 text-white hover:bg-white hover:bg-opacity-20 px-4 py-2 rounded-lg transition"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            Back to Venues
+          </button>
+          <h1 className="text-3xl font-bold text-white">My Bookings</h1>
+          <div className="flex items-center gap-4">
+            <NotificationIcon />
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 text-white hover:bg-white hover:bg-opacity-20 px-4 py-2 rounded-lg transition"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
       <div className="max-w-6xl mx-auto px-4">
-        <h1 className="text-3xl font-bold text-gray-800 mb-8">My Bookings</h1>
 
         {bookings.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
@@ -128,7 +159,7 @@ export default function MyBookings() {
                       {booking.venueId?.location || 'Location'}
                     </p>
                   </div>
-                  <StatusBadge status={booking.status} workflowStage={booking.workflowStage} />
+                  <StatusBadge status={booking.status} workflowStage={booking.workflowStage} chargesWaived={booking.chargesWaived} />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -164,10 +195,18 @@ export default function MyBookings() {
                   </div>
                 )}
 
-                {booking.status === 'payment_pending' && (
+                {booking.status === 'payment_pending' && !booking.chargesWaived && (
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
                     <p className="text-sm text-orange-800 font-medium">
                       ⚠️ Your booking has been approved! Please complete the payment to confirm your booking.
+                    </p>
+                  </div>
+                )}
+
+                {booking.status === 'payment_completed' && booking.chargesWaived && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-green-800 font-medium">
+                      ✓ Your booking has been approved with charges waived. No payment is required!
                     </p>
                   </div>
                 )}
@@ -181,7 +220,7 @@ export default function MyBookings() {
                     Download Permission
                   </button>
 
-                  {booking.status === 'payment_pending' && (
+                  {booking.status === 'payment_pending' && !booking.chargesWaived && (
                     <button
                       onClick={() => handleMakePayment(booking)}
                       className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition text-sm font-medium"

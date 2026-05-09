@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { MapPin, Users, LogOut, Calendar, Clock, X, CheckCircle, ChevronDown } from 'lucide-react'
+import NotificationIcon from '../components/NotificationIcon'
 
 export default function Venues() {
   const [venues, setVenues] = useState([])
@@ -50,7 +51,7 @@ export default function Venues() {
     setTimeSlots([])
     setSelectedSlot(null)
     setBookingError('')
-    
+
     try {
       const response = await apiClient.get(`/bookings/availability/${venue._id}?date=${date}`)
       setTimeSlots(response.data || [])
@@ -129,9 +130,10 @@ export default function Venues() {
           <div className="flex-1"></div>
           <div className="flex-1 text-center">
             <h1 className="text-3xl font-bold text-white mb-2">Venue Booking</h1>
-            <p className="text-emerald-100 text-lg">Welcome, {user?.firstName} {user?.lastName}</p>
+            <p className="text-emerald-100 text-lg">Welcome, {user?.name || user?.email?.split('@')[0]}</p>
           </div>
-          <div className="flex-1 flex justify-end gap-4">
+          <div className="flex-1 flex justify-end gap-4 items-center">
+            <NotificationIcon />
             <button
               onClick={() => navigate('/my-bookings')}
               className="flex items-center gap-2 bg-emerald-500 text-white px-4 py-2 rounded-lg hover:bg-emerald-600 transition shadow-md"
@@ -202,7 +204,7 @@ export default function Venues() {
           {venues.map(venue => (
             <div key={venue._id} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition transform hover:scale-105">
               <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-40"></div>
-              
+
               <div className="p-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-2">{venue.name}</h2>
                 <p className="text-gray-600 text-sm mb-4">{venue.description}</p>
@@ -226,7 +228,7 @@ export default function Venues() {
                   {venue.ownerId && (
                     <div className="flex items-center text-gray-700">
                       <span className="text-sm">
-                        <span className="font-medium text-gray-800">Managed by:</span> {venue.ownerId.firstName} {venue.ownerId.lastName}
+                        <span className="font-medium text-gray-800">Managed by:</span> {venue.ownerId.name}
                       </span>
                     </div>
                   )}
@@ -340,13 +342,12 @@ export default function Venues() {
                             key={idx}
                             onClick={() => setSelectedSlot(slot)}
                             disabled={slot.isBooked}
-                            className={`p-4 rounded-lg font-medium transition text-center ${
-                              slot.isBooked
+                            className={`p-4 rounded-lg font-medium transition text-center ${slot.isBooked
                                 ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                                 : selectedSlot === slot
-                                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white ring-2 ring-emerald-400 shadow-lg'
-                                : 'bg-gray-100 text-gray-800 hover:bg-emerald-50 border border-emerald-200'
-                            }`}
+                                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white ring-2 ring-emerald-400 shadow-lg'
+                                  : 'bg-gray-100 text-gray-800 hover:bg-emerald-50 border border-emerald-200'
+                              }`}
                           >
                             <div className="font-semibold">{slot.startTime} - {slot.endTime}</div>
                             <div className="text-xs mt-1">

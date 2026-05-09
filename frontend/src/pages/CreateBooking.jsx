@@ -25,6 +25,7 @@ export default function CreateBooking() {
   const [minBookingDate, setMinBookingDate] = useState('')
   const [minAdvanceDays, setMinAdvanceDays] = useState(10)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [confirmedBookings, setConfirmedBookings] = useState([])
 
   useEffect(() => {
     fetchVenue()
@@ -33,9 +34,29 @@ export default function CreateBooking() {
 
   useEffect(() => {
     if (formData.date) {
-      generateTimeSlots()
+      fetchConfirmedBookingsAndGenerateSlots()
     }
   }, [formData.date])
+
+  const fetchConfirmedBookingsAndGenerateSlots = async () => {
+    if (!formData.date || !venueId) return
+    
+    setLoadingSlots(true)
+    
+    try {
+      // First fetch confirmed bookings
+      const response = await bookingsAPI.getConfirmedBookings(venueId, formData.date)
+      setConfirmedBookings(response.data)
+      
+      // Then generate slots with the confirmed bookings data
+      generateTimeSlotsWithConfirmed(response.data)
+    } catch (err) {
+      console.error('Failed to fetch confirmed bookings:', err)
+      setConfirmedBookings([])
+      // Generate slots anyway even if fetch fails
+      generateTimeSlotsWithConfirmed([])
+    }
+  }
 
   const fetchVenue = async () => {
     try {
@@ -61,13 +82,12 @@ export default function CreateBooking() {
     }
   }
 
-  const generateTimeSlots = () => {
+  const generateTimeSlotsWithConfirmed = (confirmedBookingsData) => {
     if (!formData.date || !venue) {
       setAvailableSlots([])
+      setLoadingSlots(false)
       return
     }
-    
-    setLoadingSlots(true)
     
     // Get day of week for selected date (0 = Sunday, 1 = Monday, etc.)
     const selectedDate = new Date(formData.date)
@@ -92,7 +112,18 @@ export default function CreateBooking() {
     const [toHour] = dayAvailability.endTime.split(':').map(Number)
     
     // Generate hourly slots within venue's available hours for this day
+    // Filter out confirmed bookings
     for (let hour = fromHour; hour < toHour; hour++) {
+      // Check if this hour falls within any confirmed booking
+      const isConfirmed = confirmedBookingsData.some(booking => {
+        return hour >= booking.startHour && hour < booking.endHour
+      })
+      
+      // Skip this slot if it's part of a confirmed booking
+      if (isConfirmed) {
+        continue
+      }
+      
       const startTime = `${hour.toString().padStart(2, '0')}:00`
       const endHour = hour + 1
       const endTime = `${endHour.toString().padStart(2, '0')}:00`
@@ -150,6 +181,13 @@ export default function CreateBooking() {
         return
       }
       
+      // Check if all slots between start and end are continuous
+      const isContinuous = checkContinuousSlots(startHour, endHour)
+      if (!isContinuous) {
+        setError('Selected time range contains unavailable slots. Please select continuous available time slots only.')
+        return
+      }
+      
       setSelectedSlot({
         startTime: selectedSlot.startTime,
         endTime: slot.endTime,
@@ -158,6 +196,21 @@ export default function CreateBooking() {
       })
     }
     setError('')
+  }
+
+  const checkContinuousSlots = (startHour, endHour) => {
+    // Check if all hours between startHour and endHour exist in availableSlots
+    for (let hour = startHour; hour < endHour; hour++) {
+      const slotExists = availableSlots.some(slot => {
+        const slotHour = parseInt(slot.startTime.split(':')[0])
+        return slotHour === hour
+      })
+      
+      if (!slotExists) {
+        return false
+      }
+    }
+    return true
   }
 
   const isSlotInRange = (slot) => {
@@ -346,7 +399,7 @@ export default function CreateBooking() {
                 {loadingSlots ? (
                   <div className="text-center py-8 text-gray-500">Loading time slots...</div>
                 ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                     {availableSlots.map((slot, idx) => {
                       const isSelected = selectedSlot && selectedSlot.startTime === slot.startTime
                       const isInRange = isSlotInRange(slot)
@@ -364,7 +417,11 @@ export default function CreateBooking() {
                               : 'bg-gray-100 text-gray-800 hover:bg-emerald-50 border border-gray-300 hover:border-emerald-300'
                           }`}
                         >
-                          {slot.startTime}
+                          <div className="text-xs leading-tight">
+                            {slot.startTime}
+                            <span className="block text-[10px] opacity-75">to</span>
+                            {slot.endTime}
+                          </div>
                         </button>
                       )
                     })}
@@ -390,6 +447,9 @@ export default function CreateBooking() {
                       <p><strong>Pricing:</strong> {pricing.pricingType === 'half-day' ? 'Half-day rate' : 'Full-day rate'}</p>
                       <p className="text-lg font-bold pt-2 border-t border-emerald-300 mt-2">
                         Total: {pricing.currency} {pricing.price}
+                      </p>
+                      <p className="text-xs text-emerald-700 pt-2 border-t border-emerald-200 mt-2">
+                        💡 Note: In certain cases, the admin may waive the charges for your booking. If charges are waived, no payment will be required.
                       </p>
                     </div>
                   </div>

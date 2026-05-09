@@ -13,9 +13,18 @@ router.get('/', authMiddleware, async (req, res, next) => {
   }
 });
 
+router.put('/mark-all-read', authMiddleware, async (req, res, next) => {
+  try {
+    await notificationService.markAllAsRead(req.user.id);
+    res.status(200).json({ message: 'All notifications marked as read' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put('/:id/read', authMiddleware, async (req, res, next) => {
   try {
-    const notification = await notificationService.markNotificationAsRead(req.params.id);
+    const notification = await notificationService.markAsRead(req.params.id);
     res.status(200).json(notification);
   } catch (error) {
     next(error);

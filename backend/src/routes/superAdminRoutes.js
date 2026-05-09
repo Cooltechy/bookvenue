@@ -5,13 +5,86 @@ const bcrypt = require('bcryptjs');
 
 const router = express.Router();
 
+// Search university users (super admin only)
+router.get('/search-university-users', authMiddleware, superAdminMiddleware, async (req, res, next) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query || query.length < 2) {
+      return res.status(400).json({ message: 'Search query must be at least 2 characters' });
+    }
+
+    const universityService = require('../services/UniversityService');
+    const axios = require('axios');
+    
+    try {
+      const apiUrl = process.env.UNIVERSITY_DB_API_URL || 'http://localhost:3002';
+      const apiKey = process.env.UNIVERSITY_DB_API_KEY;
+      
+      const response = await axios.get(
+        `${apiUrl}/api/users/search?query=${encodeURIComponent(query)}`,
+        {
+          headers: {
+            'x-api-key': apiKey
+          }
+        }
+      );
+      
+      const universityUsers = response.data.users || [];
+      
+      // Check which users are already registered locally
+      const emails = universityUsers.map(u => u.email.toLowerCase());
+      const localUsers = await User.find({ email: { $in: emails } }).select('email role');
+      const localUserMap = {};
+      localUsers.forEach(u => {
+        localUserMap[u.email] = u.role;
+      });
+      
+      // Add registration status to each user
+      const usersWithStatus = universityUsers.map(u => ({
+        ...u,
+        name: u.name,
+        isRegistered: !!localUserMap[u.email.toLowerCase()],
+        currentRole: localUserMap[u.email.toLowerCase()] || null
+      }));
+      
+      res.status(200).json({ users: usersWithStatus });
+    } catch (error) {
+      if (error.response && error.response.status === 404) {
+        return res.status(200).json({ users: [] });
+      }
+      throw error;
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get all users (super admin only)
 router.get('/users', authMiddleware, superAdminMiddleware, async (req, res, next) => {
   try {
     const { role } = req.query;
     const filter = role ? { role } : {};
     const users = await User.find(filter).select('-password').sort({ createdAt: -1 });
-    res.status(200).json(users);
+    
+    // Fetch and merge university data for all users
+    const universityService = require('../services/UniversityService');
+    const completeUsers = await Promise.all(
+      users.map(async (user) => {
+        const universityUser = await universityService.getUserByEmail(user.email);
+        return {
+          ...user.toObject(),
+          name: universityUser?.name || '',
+          department: universityUser?.department || '',
+          type: universityUser?.type || ''
+        };
+      })
+    );
+    
+    // Filter out students - only show faculty and staff
+    const nonStudentUsers = completeUsers.filter(u => u.type !== 'student');
+    
+    res.status(200).json(nonStudentUsers);
   } catch (error) {
     next(error);
   }
@@ -23,7 +96,31 @@ router.get('/admins', authMiddleware, superAdminMiddleware, async (req, res, nex
     const admins = await User.find({ 
       role: { $in: ['admin', 'super_admin'] } 
     }).select('-password');
-    res.status(200).json(admins);
+    
+    // Fetch and merge university data for all admins
+    const universityService = require('../services/UniversityService');
+    const completeAdmins = await Promise.all(
+      admins.map(async (admin) => {
+        try {
+          const universityUser = await universityService.getUserByEmail(admin.email);
+          return {
+            ...admin.toObject(),
+            name: universityUser?.name || '',
+            department: universityUser?.department || ''
+          };
+        } catch (error) {
+          console.error(`Failed to fetch university data for ${admin.email}:`, error.message);
+          // Return admin data without university info if fetch fails
+          return {
+            ...admin.toObject(),
+            name: '',
+            department: ''
+          };
+        }
+      })
+    );
+    
+    res.status(200).json(completeAdmins);
   } catch (error) {
     next(error);
   }
@@ -32,12 +129,12 @@ router.get('/admins', authMiddleware, superAdminMiddleware, async (req, res, nex
 // Create new admin (super admin only)
 router.post('/admins', authMiddleware, superAdminMiddleware, async (req, res, next) => {
   try {
-    const { email, password, firstName, lastName, department } = req.body;
+    const { email, password } = req.body;
 
     // Validate required fields
-    if (!email || !password || !firstName || !lastName) {
+    if (!email) {
       return res.status(400).json({ 
-        message: 'Email, password, first name, and last name are required' 
+        message: 'Email is required' 
       });
     }
 
@@ -48,31 +145,54 @@ router.post('/admins', authMiddleware, superAdminMiddleware, async (req, res, ne
       });
     }
 
+    const normalizedEmail = email.toLowerCase();
+
     // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      return res.status(400).json({ message: 'Email already registered' });
+      return res.status(400).json({ message: 'User already registered in the system' });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Verify user exists in university database
+    const universityService = require('../services/UniversityService');
+    const universityUser = await universityService.getUserByEmail(normalizedEmail);
+    
+    if (!universityUser) {
+      return res.status(400).json({ 
+        message: 'Email not found in university database. Only registered university members can be made admin.' 
+      });
+    }
+
+    // Check if user is faculty or staff (not student)
+    if (universityUser.type === 'student') {
+      return res.status(403).json({ 
+        message: 'Students cannot be assigned admin roles. Only faculty and staff members can be made admin.' 
+      });
+    }
+
+    // Use provided password or default password
+    const adminPassword = password || 'admin123';
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
     // Create admin user
     const admin = new User({
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       password: hashedPassword,
-      firstName,
-      lastName,
-      role: 'admin',
-      department: department || 'Not specified',
-      studentId: `ADMIN${Date.now().toString().slice(-6)}`
+      role: 'admin'
     });
 
     await admin.save();
 
-    // Return admin without password
+    // Return admin without password, merged with university data
     const { password: _, ...adminData } = admin.toObject();
-    res.status(201).json(adminData);
+    const completeAdmin = {
+      ...adminData,
+      name: universityUser?.name || '',
+      department: universityUser?.department || '',
+      defaultPassword: password ? undefined : 'admin123' // Only return if default was used
+    };
+
+    res.status(201).json(completeAdmin);
   } catch (error) {
     next(error);
   }
@@ -81,27 +201,26 @@ router.post('/admins', authMiddleware, superAdminMiddleware, async (req, res, ne
 // Update admin (super admin only)
 router.put('/admins/:id', authMiddleware, superAdminMiddleware, async (req, res, next) => {
   try {
-    const { firstName, lastName, department } = req.body;
-    const updates = {};
-
-    if (firstName) updates.firstName = firstName;
-    if (lastName) updates.lastName = lastName;
-    if (department !== undefined) updates.department = department; // Allow empty string
-
-    // Email cannot be changed - it's the unique identifier
-    // Removed email update logic
-
-    const admin = await User.findByIdAndUpdate(
-      req.params.id,
-      updates,
-      { new: true }
-    ).select('-password');
+    // Note: User details like name, department are stored in university DB
+    // This endpoint can be used for other updates if needed in the future
+    
+    const admin = await User.findById(req.params.id).select('-password');
 
     if (!admin) {
       return res.status(404).json({ message: 'Admin not found' });
     }
 
-    res.status(200).json(admin);
+    // Fetch and merge university data
+    const universityService = require('../services/UniversityService');
+    const universityUser = await universityService.getUserByEmail(admin.email);
+    
+    const completeAdmin = {
+      ...admin.toObject(),
+      name: universityUser?.name || '',
+      department: universityUser?.department || ''
+    };
+
+    res.status(200).json(completeAdmin);
   } catch (error) {
     next(error);
   }
@@ -119,6 +238,22 @@ router.post('/users/:id/promote', authMiddleware, superAdminMiddleware, async (r
     if (user.role === 'admin' || user.role === 'super_admin') {
       return res.status(400).json({ 
         message: `User is already ${user.role === 'super_admin' ? 'a super admin' : 'an admin'}` 
+      });
+    }
+
+    // Verify user is faculty or staff (not student)
+    const universityService = require('../services/UniversityService');
+    const universityUser = await universityService.getUserByEmail(user.email);
+    
+    if (!universityUser) {
+      return res.status(400).json({ 
+        message: 'User not found in university database' 
+      });
+    }
+
+    if (universityUser.type === 'student') {
+      return res.status(403).json({ 
+        message: 'Students cannot be promoted to admin. Only faculty and staff members can be made admin.' 
       });
     }
 

@@ -3,6 +3,7 @@ const venueRepository = require('../repositories/VenueRepository');
 const userRepository = require('../repositories/UserRepository');
 const bookingQueueRepository = require('../repositories/BookingQueueRepository');
 const systemParameterRepository = require('../repositories/SystemParameterRepository');
+const notificationService = require('./NotificationService');
 const { ValidationError, NotFoundError, ConflictError } = require('../utils/errors');
 
 class BookingService {
@@ -10,12 +11,12 @@ class BookingService {
   MIN_SLOT_DURATION_HOURS = 1;
   // Default minimum advance booking days (can be overridden by system parameter)
   DEFAULT_MIN_ADVANCE_BOOKING_DAYS = 10;
-  
+
   // Calculate price based on duration
   calculatePrice(venue, durationHours) {
     let price;
     let pricingType;
-    
+
     // Validate venue has pricing information
     if (!venue.halfDayPrice || !venue.fullDayPrice) {
       throw new ValidationError(
@@ -23,7 +24,7 @@ class BookingService {
         `(halfDayPrice: ${venue.halfDayPrice}, fullDayPrice: ${venue.fullDayPrice})`
       );
     }
-    
+
     if (durationHours > 5) {
       // Full day pricing for more than 5 hours
       price = venue.fullDayPrice;
@@ -35,7 +36,7 @@ class BookingService {
     } else {
       throw new ValidationError('Minimum booking duration is 1 hour');
     }
-    
+
     return { price, pricingType };
   }
 
@@ -59,13 +60,13 @@ class BookingService {
     const bookingDate = new Date(date);
     const [startHours, startMinutes] = startTime.split(':').map(Number);
     const [endHours, endMinutes] = endTime.split(':').map(Number);
-    
+
     const startDateTime = new Date(bookingDate);
     startDateTime.setHours(startHours, startMinutes, 0, 0);
-    
+
     const endDateTime = new Date(bookingDate);
     endDateTime.setHours(endHours, endMinutes, 0, 0);
-    
+
     // If end time is before start time, assume it's next day
     if (endDateTime <= startDateTime) {
       endDateTime.setDate(endDateTime.getDate() + 1);
@@ -74,12 +75,12 @@ class BookingService {
     // Calculate duration in hours
     const durationMs = endDateTime - startDateTime;
     const durationHours = durationMs / (1000 * 60 * 60);
-    
+
     // Validate minimum duration
     if (durationHours < this.MIN_SLOT_DURATION_HOURS) {
       throw new ValidationError(`Minimum booking duration is ${this.MIN_SLOT_DURATION_HOURS} hour(s)`);
     }
-    
+
     // Validate start time is in the future
     const now = new Date();
     if (startDateTime <= now) {
@@ -104,7 +105,7 @@ class BookingService {
     // Validate advance booking requirement
     const minAdvanceBookingDate = new Date(now);
     minAdvanceBookingDate.setDate(minAdvanceBookingDate.getDate() + minAdvanceDays);
-    
+
     if (startDateTime < minAdvanceBookingDate) {
       const daysUntilBooking = Math.ceil((startDateTime - now) / (1000 * 60 * 60 * 24));
       throw new ValidationError(
@@ -112,28 +113,32 @@ class BookingService {
       );
     }
 
-    // Check for double booking - user cannot have overlapping bookings
+    // Check for double booking - user cannot have overlapping APPROVED/CONFIRMED bookings
     const userBookings = await bookingRepository.findByUserId(userId);
     const hasUserConflict = userBookings.some(booking => {
-      if (booking.status === 'cancelled') return false;
+      if (booking.status === 'cancelled' || booking.status === 'rejected' || booking.status === 'pending_approval') return false;
+      // Only check against payment_pending and payment_completed bookings
       return startDateTime < booking.endTime && endDateTime > booking.startTime;
     });
-    
+
     if (hasUserConflict) {
       throw new ConflictError(
-        `You already have a booking during this time. Please choose a different time slot.`
+        `You already have an approved/confirmed booking during this time. Please choose a different time slot.`
       );
     }
 
-    // Check for conflicts with existing bookings at this venue
+    // Check for conflicts with APPROVED/CONFIRMED bookings at this venue
+    // Allow multiple pending_approval requests for the same slot
     const hasVenueConflict = await bookingRepository.checkConflict(
       venueId,
       startDateTime,
-      endDateTime
+      endDateTime,
+      null,
+      ['payment_pending', 'payment_completed'] // Only check against approved/confirmed bookings
     );
     if (hasVenueConflict) {
       throw new ConflictError(
-        `This time slot overlaps with an existing booking`
+        `This time slot is already confirmed by another booking`
       );
     }
 
@@ -164,7 +169,10 @@ class BookingService {
     });
 
     // Send notification to user
-    await this.sendBookingSubmittedNotification(booking);
+    await notificationService.sendPaymentRequiredNotification(booking);
+
+    // Notify admins
+    await notificationService.notifyAdminsOfBookingRequest(booking);
 
     return {
       booking,
@@ -173,9 +181,7 @@ class BookingService {
   }
 
   async sendBookingSubmittedNotification(booking) {
-    // This would integrate with notification service
-    // For now, we'll just log it
-    console.log(`Booking ${booking._id} submitted for approval`);
+    // Handled by direct call to notificationService in createBooking
   }
 
   // Check if a slot is available and return conflict info if not
@@ -194,13 +200,13 @@ class BookingService {
     const bookingDate = new Date(date);
     const [startHours, startMinutes] = startTime.split(':').map(Number);
     const [endHours, endMinutes] = endTime.split(':').map(Number);
-    
+
     const startDateTime = new Date(bookingDate);
     startDateTime.setHours(startHours, startMinutes, 0, 0);
-    
+
     const endDateTime = new Date(bookingDate);
     endDateTime.setHours(endHours, endMinutes, 0, 0);
-    
+
     // If end time is before start time, assume it's next day
     if (endDateTime <= startDateTime) {
       endDateTime.setDate(endDateTime.getDate() + 1);
@@ -211,35 +217,55 @@ class BookingService {
     const durationHours = durationMs / (1000 * 60 * 60);
     const { price, pricingType } = this.calculatePrice(venue, durationHours);
 
-    // Check for user's own overlapping bookings
+    // Check for user's own overlapping APPROVED/CONFIRMED bookings
     const userBookings = await bookingRepository.findByUserId(userId);
     const userConflict = userBookings.find(booking => {
-      if (booking.status === 'cancelled') return false;
+      if (booking.status === 'cancelled' || booking.status === 'rejected' || booking.status === 'pending_approval') return false;
       return startDateTime < booking.endTime && endDateTime > booking.startTime;
     });
-    
+
     if (userConflict) {
       return {
         available: false,
         reason: 'user_conflict',
-        message: 'You already have a booking during this time. Please choose a different time slot.'
+        message: 'You already have an approved/confirmed booking during this time. Please choose a different time slot.'
       };
     }
 
-    // Check for venue conflicts
+    // Check for venue conflicts with APPROVED/CONFIRMED bookings only
     const venueConflict = await bookingRepository.checkConflict(
       venueId,
       startDateTime,
-      endDateTime
+      endDateTime,
+      null,
+      ['payment_pending', 'payment_completed']
     );
 
     if (venueConflict) {
       return {
         available: false,
         reason: 'venue_conflict',
-        message: `This time slot is already booked. Please select another time slot or venue.`,
+        message: `This time slot is already confirmed. Please select another time slot or venue.`,
         startTime: startDateTime,
         endTime: endDateTime
+      };
+    }
+
+    // Check if user has pending requests for this slot
+    const pendingRequests = userBookings.filter(booking => {
+      if (booking.status !== 'pending_approval') return false;
+      return startDateTime < booking.endTime && endDateTime > booking.startTime;
+    });
+
+    if (pendingRequests.length > 0) {
+      return {
+        available: true,
+        hasPendingRequest: true,
+        message: 'You already have a pending request for this time slot. You can submit another request, but only one will be approved.',
+        durationHours,
+        price,
+        pricingType,
+        currency: venue.currency || 'INR'
       };
     }
 
@@ -349,6 +375,32 @@ class BookingService {
     return slots;
   }
 
+  // Get confirmed bookings for a venue on a specific date
+  async getConfirmedBookingsForDate(venueId, date) {
+    const venue = await venueRepository.findById(venueId);
+    if (!venue) {
+      throw new NotFoundError('Venue not found');
+    }
+
+    // Get all confirmed bookings (payment_pending and payment_completed)
+    const bookings = await bookingRepository.findConfirmedByVenueId(venueId);
+    const dateStr = new Date(date).toISOString().split('T')[0];
+
+    // Filter bookings for the specific date
+    const dayBookings = bookings.filter(b => {
+      const bookingDate = new Date(b.startTime).toISOString().split('T')[0];
+      return bookingDate === dateStr;
+    });
+
+    // Return simplified booking data with time ranges
+    return dayBookings.map(booking => ({
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      startHour: new Date(booking.startTime).getHours(),
+      endHour: new Date(booking.endTime).getHours()
+    }));
+  }
+
   // Add booking request to priority queue
   async addToQueue(userId, venueId, date, startTime) {
     const user = await userRepository.findById(userId);
@@ -361,17 +413,24 @@ class BookingService {
       throw new NotFoundError('Venue not found');
     }
 
+    // Fetch user details from university database
+    const universityService = require('./UniversityService');
+    const universityUser = await universityService.getUserByEmail(user.email);
+    const userName = universityUser
+      ? universityUser.name
+      : user.email;
+
     const bookingRequest = {
       userId,
       venueId,
       date,
       startTime,
-      userName: `${user.firstName} ${user.lastName}`,
+      userName,
       userEmail: user.email
     };
 
     const requestId = bookingQueueRepository.addToQueue(venueId, bookingRequest, 1);
-    
+
     return {
       requestId,
       status: 'queued',
@@ -392,7 +451,7 @@ class BookingService {
   // Process next booking from queue
   async processNextBooking(venueId) {
     const nextRequest = bookingQueueRepository.getNextRequest(venueId);
-    
+
     if (!nextRequest) {
       throw new NotFoundError('No pending booking requests in queue');
     }
@@ -433,7 +492,7 @@ class BookingService {
       if (booking.status === 'cancelled') return false;
       return startTime < booking.endTime && endTime > booking.startTime;
     });
-    
+
     return {
       hasConflict: conflicts.length > 0,
       conflictingBookings: conflicts.map(b => ({
@@ -452,10 +511,10 @@ class BookingService {
     return bookings.filter(b => b.status !== 'cancelled');
   }
 
-  // Approve a booking (admin only) - Moves to payment pending stage
-  async approveBooking(bookingId, adminId) {
+  // Approve a booking (admin only) - Moves to payment pending stage or completed if charges waived
+  async approveBooking(bookingId, adminId, waiveCharges = false) {
     const booking = await this.getBookingById(bookingId);
-    
+
     if (booking.status !== 'pending_approval') {
       throw new ValidationError(`Cannot approve a booking with status: ${booking.status}`);
     }
@@ -469,50 +528,121 @@ class BookingService {
     if (admin.role === 'admin') {
       const venueId = booking.venueId._id || booking.venueId;
       const venue = await venueRepository.findById(venueId);
-      
+
       if (!venue) {
         throw new ValidationError('Venue not found');
       }
-      
+
       // Handle both populated and non-populated ownerId
       const venueOwnerIdStr = venue.ownerId?._id?.toString() || venue.ownerId?.toString();
       const adminIdStr = adminId.toString();
-      
+
       if (!venueOwnerIdStr || venueOwnerIdStr !== adminIdStr) {
         throw new ValidationError('You can only approve bookings for your own venues');
       }
     }
 
-    const approved = await bookingRepository.update(bookingId, {
-      status: 'payment_pending',
-      workflowStage: 'approved_awaiting_payment',
-      paymentStatus: 'pending',
-      approvedBy: adminId,
-      approvalDate: new Date()
-    });
+    let updateData;
+
+    if (waiveCharges) {
+      // If charges are waived, mark booking as completed directly
+      updateData = {
+        status: 'payment_completed',
+        workflowStage: 'payment_completed',
+        paymentStatus: 'waived',
+        chargesWaived: true,
+        chargesWaivedBy: adminId,
+        chargesWaivedDate: new Date(),
+        approvedBy: adminId,
+        approvalDate: new Date()
+      };
+    } else {
+      // Normal flow - require payment
+      updateData = {
+        status: 'payment_pending',
+        workflowStage: 'approved_awaiting_payment',
+        paymentStatus: 'pending',
+        approvedBy: adminId,
+        approvalDate: new Date()
+      };
+    }
+
+    const approved = await bookingRepository.update(bookingId, updateData);
 
     if (!approved) {
       throw new NotFoundError('Booking not found');
     }
 
-    // Send notification to user about approval and payment requirement
-    await this.sendPaymentRequiredNotification(approved);
+    // Auto-reject all other pending bookings that overlap with this approved booking
+    await this.autoRejectOverlappingBookings(approved);
+
+    // Send notification to user
+    if (waiveCharges) {
+      await notificationService.sendBookingConfirmation(approved);
+    } else {
+      await notificationService.sendPaymentRequiredNotification(approved);
+    }
 
     return {
       booking: approved,
-      message: 'Booking approved. User has been notified to complete the payment.'
+      message: waiveCharges
+        ? 'Booking approved with charges waived. User has been notified that no payment is required. Overlapping pending requests have been automatically rejected.'
+        : 'Booking approved. User has been notified to complete the payment. Overlapping pending requests have been automatically rejected.'
     };
   }
 
+  // Auto-reject overlapping pending bookings when one is approved
+  async autoRejectOverlappingBookings(approvedBooking) {
+    const venueId = approvedBooking.venueId._id || approvedBooking.venueId;
+
+    // Find all pending bookings for this venue that overlap with the approved booking
+    const allBookings = await bookingRepository.findByVenueId(venueId);
+
+    const overlappingPendingBookings = allBookings.filter(booking => {
+      // Skip the approved booking itself
+      if (booking._id.toString() === approvedBooking._id.toString()) return false;
+
+      // Only consider pending_approval bookings
+      if (booking.status !== 'pending_approval') return false;
+
+      // Check for time overlap
+      return approvedBooking.startTime < booking.endTime &&
+        approvedBooking.endTime > booking.startTime;
+    });
+
+    // Reject all overlapping bookings
+    const rejectionPromises = overlappingPendingBookings.map(booking =>
+      bookingRepository.update(booking._id, {
+        status: 'rejected',
+        workflowStage: 'rejected',
+        rejectionReason: `This time slot has been booked by another user. The booking from ${approvedBooking.startTime.toLocaleString()} to ${approvedBooking.endTime.toLocaleString()} was approved first.`
+      })
+    );
+
+    const rejectedBookings = await Promise.all(rejectionPromises);
+
+    // Send notifications to affected users
+    for (const rejectedBooking of rejectedBookings) {
+      if (rejectedBooking) {
+        await this.sendRejectionNotification(rejectedBooking);
+      }
+    }
+
+    return rejectedBookings.length;
+  }
+
   async sendPaymentRequiredNotification(booking) {
-    // This would integrate with notification service
-    console.log(`Booking ${booking._id} approved. Payment required.`);
+    // Handled by direct call to notificationService in approveBooking
+  }
+
+  async sendChargesWaivedNotification(booking) {
+    // Handled by direct call to notificationService in approveBooking
   }
 
   // Reject a booking (admin only)
   async rejectBooking(bookingId, adminId, rejectionReason = '') {
     const booking = await this.getBookingById(bookingId);
-    
+
     if (booking.status !== 'pending_approval') {
       throw new ValidationError(`Cannot reject a booking with status: ${booking.status}`);
     }
@@ -526,15 +656,15 @@ class BookingService {
     if (admin.role === 'admin') {
       const venueId = booking.venueId._id || booking.venueId;
       const venue = await venueRepository.findById(venueId);
-      
+
       if (!venue) {
         throw new ValidationError('Venue not found');
       }
-      
+
       // Handle both populated and non-populated ownerId
       const venueOwnerIdStr = venue.ownerId?._id?.toString() || venue.ownerId?.toString();
       const adminIdStr = adminId.toString();
-      
+
       if (!venueOwnerIdStr || venueOwnerIdStr !== adminIdStr) {
         throw new ValidationError('You can only reject bookings for your own venues');
       }
@@ -551,7 +681,7 @@ class BookingService {
     }
 
     // Send notification to user about rejection
-    await this.sendRejectionNotification(rejected);
+    await notificationService.sendRejectionNotification(rejected);
 
     return {
       booking: rejected,
@@ -560,14 +690,13 @@ class BookingService {
   }
 
   async sendRejectionNotification(booking) {
-    // This would integrate with notification service
-    console.log(`Booking ${booking._id} rejected.`);
+    // Handled by direct call to notificationService in rejectBooking
   }
 
   // Submit payment for approved booking
   async submitPayment(bookingId, userId, paymentDetails, paymentProofFile = null) {
     const booking = await this.getBookingById(bookingId);
-    
+
     // Verify booking belongs to user
     // booking.userId might be populated (object) or just an ID (string/ObjectId)
     const bookingUserId = booking.userId._id ? booking.userId._id.toString() : booking.userId.toString();
@@ -608,7 +737,7 @@ class BookingService {
     }
 
     // Send confirmation notification
-    await this.sendPaymentConfirmationNotification(updated);
+    await notificationService.sendBookingConfirmation(updated);
 
     return {
       booking: updated,
@@ -617,8 +746,7 @@ class BookingService {
   }
 
   async sendPaymentConfirmationNotification(booking) {
-    // This would integrate with notification service
-    console.log(`Payment completed for booking ${booking._id}. Booking confirmed.`);
+    // Handled by direct call to notificationService in submitPayment
   }
 
   // Get bookings by payment status (admin)
@@ -631,16 +759,46 @@ class BookingService {
   async getPendingApprovalBookings(adminId) {
     const allBookings = await bookingRepository.findAll();
     const venueRepository = require('../repositories/VenueRepository');
-    
+    const universityService = require('./UniversityService');
+
     // Get admin's venues
     const adminVenues = await venueRepository.findByOwnerId(adminId);
     const adminVenueIds = adminVenues.map(v => v._id.toString());
-    
+
     // Filter bookings for admin's venues only
-    return allBookings.filter(b => 
-      b.status === 'pending_approval' && 
+    const filteredBookings = allBookings.filter(b =>
+      b.status === 'pending_approval' &&
       adminVenueIds.includes(b.venueId._id.toString())
     );
+
+    // Enrich bookings with university user data (name and type)
+    const enrichedBookings = await Promise.all(
+      filteredBookings.map(async (booking) => {
+        try {
+          const universityUser = await universityService.getUserByEmail(booking.userId.email);
+          return {
+            ...booking.toObject(),
+            userId: {
+              ...booking.userId.toObject(),
+              name: universityUser?.name || '',
+              type: universityUser?.type || 'student'
+            }
+          };
+        } catch (error) {
+          console.error(`Error fetching university user for ${booking.userId.email}:`, error.message);
+          return {
+            ...booking.toObject(),
+            userId: {
+              ...booking.userId.toObject(),
+              name: '',
+              type: 'student'
+            }
+          };
+        }
+      })
+    );
+
+    return enrichedBookings;
   }
 
   // Get payment pending bookings

@@ -1,6 +1,6 @@
 import { Clock, CreditCard, CheckCircle, XCircle, Ban } from 'lucide-react'
 
-export default function StatusBadge({ status, workflowStage }) {
+export default function StatusBadge({ status, workflowStage, chargesWaived }) {
   const statusConfig = {
     pending_approval: {
       label: 'Pending Approval',
@@ -15,10 +15,10 @@ export default function StatusBadge({ status, workflowStage }) {
       description: 'Approved - Please make payment'
     },
     payment_completed: {
-      label: 'Confirmed',
+      label: chargesWaived ? 'Confirmed (Charges Waived)' : 'Confirmed',
       color: 'bg-green-100 text-green-800 border-green-300',
       icon: CheckCircle,
-      description: 'Booking confirmed'
+      description: chargesWaived ? 'Booking confirmed - No payment required' : 'Booking confirmed'
     },
     rejected: {
       label: 'Rejected',
