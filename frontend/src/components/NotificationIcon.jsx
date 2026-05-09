@@ -49,6 +49,16 @@ export default function NotificationIcon() {
         }
     }
 
+    const markAllAsRead = async () => {
+        try {
+            await apiClient.put('/notifications/mark-all-read')
+            setNotifications(notifications.map(n => ({ ...n, read: true })))
+            setUnreadCount(0)
+        } catch (err) {
+            console.error('Failed to mark all notifications as read:', err)
+        }
+    }
+
     const getIcon = (type) => {
         switch (type) {
             case 'booking_confirmed':
@@ -93,9 +103,17 @@ export default function NotificationIcon() {
                     <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
                         <h3 className="font-bold text-gray-800">Notifications</h3>
                         {unreadCount > 0 && (
-                            <span className="text-xs font-medium text-emerald-600">
-                                {unreadCount} unread
-                            </span>
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs font-medium text-emerald-600">
+                                    {unreadCount} unread
+                                </span>
+                                <button
+                                    onClick={markAllAsRead}
+                                    className="text-xs text-blue-500 hover:underline cursor-pointer font-medium"
+                                >
+                                    Mark all read
+                                </button>
+                            </div>
                         )}
                     </div>
 
