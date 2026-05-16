@@ -8,7 +8,7 @@ const router = express.Router();
 router.post('/', authMiddleware, upload.single('permissionDocument'), async (req, res, next) => {
   try {
     const { venueId, date, startTime, endTime, purpose } = req.body;
-    
+
     if (!venueId || !date || !startTime || !endTime) {
       return res.status(400).json({ message: 'Missing required fields: venueId, date, startTime, endTime' });
     }
@@ -16,7 +16,7 @@ router.post('/', authMiddleware, upload.single('permissionDocument'), async (req
     if (!req.file) {
       return res.status(400).json({ message: 'Permission document is required. Please upload a PDF, DOC, DOCX, JPG, JPEG, or PNG file.' });
     }
-    
+
     const booking = await bookingService.createBooking(
       req.user.id,
       venueId,
@@ -37,11 +37,11 @@ router.get('/availability/:venueId', async (req, res, next) => {
   try {
     const { venueId } = req.params;
     const { date } = req.query;
-    
+
     if (!date) {
       return res.status(400).json({ message: 'Date query parameter is required' });
     }
-    
+
     const slots = await bookingService.getAvailableSlots(venueId, date);
     res.status(200).json(slots);
   } catch (error) {
@@ -54,11 +54,11 @@ router.get('/confirmed/:venueId', async (req, res, next) => {
   try {
     const { venueId } = req.params;
     const { date } = req.query;
-    
+
     if (!date) {
       return res.status(400).json({ message: 'Date query parameter is required' });
     }
-    
+
     const bookings = await bookingService.getConfirmedBookingsForDate(venueId, date);
     res.status(200).json(bookings);
   } catch (error) {
@@ -70,11 +70,11 @@ router.get('/confirmed/:venueId', async (req, res, next) => {
 router.post('/check-availability', authMiddleware, async (req, res, next) => {
   try {
     const { venueId, date, startTime, endTime } = req.body;
-    
+
     if (!venueId || !date || !startTime || !endTime) {
       return res.status(400).json({ message: 'Missing required fields: venueId, date, startTime, endTime' });
     }
-    
+
     const availability = await bookingService.checkSlotAvailability(
       req.user.id,
       venueId,
@@ -203,7 +203,7 @@ router.delete('/:id', authMiddleware, async (req, res, next) => {
 router.get('/:id/permission-document', authMiddleware, async (req, res, next) => {
   try {
     const booking = await bookingService.getBookingById(req.params.id);
-    
+
     // Check if user is authorized to view this document
     // booking.userId might be populated (object) or just an ID
     const bookingUserId = booking.userId._id ? booking.userId._id.toString() : booking.userId.toString();
@@ -215,23 +215,38 @@ router.get('/:id/permission-document', authMiddleware, async (req, res, next) =>
       return res.status(404).json({ message: 'Permission document not found' });
     }
 
-    const fs = require('fs');
-    const path = require('path');
-    
-    const filePath = path.resolve(booking.permissionDocument.path);
-    
-    // Check if file exists
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: 'Permission document file not found on server' });
+    // Since we are using Cloudinary, the path is now a URL.
+    // We can simply redirect the user to the Cloudinary URL.
+    const fileUrl = booking.permissionDocument.path;
+
+    // Check if it's a local path (legacy old data that wasn't uploaded to cloudinary)
+    if (!fileUrl.startsWith('http')) {
+      const fs = require('fs');
+      const path = require('path');
+      const filePath = path.resolve(fileUrl);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: 'Legacy permission document file not found on server' });
+      }
+      res.setHeader('Content-Type', booking.permissionDocument.mimetype);
+      res.setHeader('Content-Disposition', `inline; filename="${booking.permissionDocument.filename}"`);
+      const fileStream = fs.createReadStream(filePath);
+      return fileStream.pipe(res);
     }
 
-    // Set appropriate headers
-    res.setHeader('Content-Type', booking.permissionDocument.mimetype);
+    // If it's a Cloudinary URL, fetch it and stream
+    const axios = require('axios');
+    const cloudRes = await axios({
+      url: fileUrl,
+      method: 'GET',
+      responseType: 'stream'
+    });
+
+    // Pass the headers from cloudinary, or fallback to our db ones
+    res.setHeader('Content-Type', cloudRes.headers['content-type'] || booking.permissionDocument.mimetype);
     res.setHeader('Content-Disposition', `inline; filename="${booking.permissionDocument.filename}"`);
-    
-    // Stream the file
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
+
+    cloudRes.data.pipe(res);
   } catch (error) {
     next(error);
   }
@@ -283,14 +298,14 @@ router.get('/admin/payment-pending', authMiddleware, adminMiddleware, async (req
 router.post('/:id/payment', authMiddleware, upload.single('paymentProof'), async (req, res, next) => {
   try {
     const { transactionId, paymentMethod } = req.body;
-    
+
     const result = await bookingService.submitPayment(
       req.params.id,
       req.user.id,
       { transactionId, paymentMethod },
       req.file
     );
-    
+
     res.status(200).json(result);
   } catch (error) {
     next(error);
