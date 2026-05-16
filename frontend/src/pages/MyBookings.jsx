@@ -32,10 +32,21 @@ export default function MyBookings() {
   const handleDownloadDocument = async (bookingId) => {
     try {
       const response = await bookingsAPI.downloadPermissionDocument(bookingId)
-      const url = window.URL.createObjectURL(new Blob([response.data]))
+      // Attempt to get the content-type to deduce the correct file extension
+      const contentType = response.headers['content-type'];
+      let ext = '.pdf';
+      if (contentType) {
+        if (contentType.includes('image/png')) ext = '.png';
+        else if (contentType.includes('image/jpeg')) ext = '.jpg';
+        else if (contentType.includes('application/msword')) ext = '.doc';
+        else if (contentType.includes('wordprocessingml')) ext = '.docx';
+      }
+
+      const blob = new Blob([response.data], { type: contentType || 'application/pdf' });
+      const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `permission-document-${bookingId}.pdf`)
+      link.setAttribute('download', `permission-document-${bookingId}${ext}`)
       document.body.appendChild(link)
       link.click()
       link.remove()

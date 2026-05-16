@@ -43,10 +43,20 @@ export default function PendingApprovals() {
   const handleDownloadDocument = async (bookingId) => {
     try {
       const response = await bookingsAPI.downloadPermissionDocument(bookingId)
-      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const contentType = response.headers['content-type'];
+      let ext = '.pdf';
+      if (contentType) {
+        if (contentType.includes('image/png')) ext = '.png';
+        else if (contentType.includes('image/jpeg')) ext = '.jpg';
+        else if (contentType.includes('application/msword')) ext = '.doc';
+        else if (contentType.includes('wordprocessingml')) ext = '.docx';
+      }
+
+      const blob = new Blob([response.data], { type: contentType || 'application/pdf' });
+      const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `permission-${bookingId}.pdf`)
+      link.setAttribute('download', `permission-${bookingId}${ext}`)
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -71,7 +81,7 @@ export default function PendingApprovals() {
         isOpen: true,
         type: 'success',
         title: 'Booking Approved',
-        message: response.data.message || (waiveCharges 
+        message: response.data.message || (waiveCharges
           ? 'Booking has been approved with charges waived. User will be notified that no payment is required.'
           : 'Booking has been approved. User will be notified to make payment.'),
         actions: [
@@ -224,20 +234,20 @@ export default function PendingApprovals() {
     const conflicts = bookings.filter(b => {
       // Don't compare with itself
       if (b._id === booking._id) return false;
-      
+
       // Check if same venue
       if (b.venueId?._id !== booking.venueId?._id) return false;
-      
+
       // Check if time slots overlap
       const bStart = new Date(b.startTime);
       const bEnd = new Date(b.endTime);
       const bookingStart = new Date(booking.startTime);
       const bookingEnd = new Date(booking.endTime);
-      
+
       // Overlap condition: (StartA < EndB) AND (EndA > StartB)
       return bStart < bookingEnd && bEnd > bookingStart;
     });
-    
+
     return conflicts;
   }
 
@@ -245,24 +255,24 @@ export default function PendingApprovals() {
     try {
       // Get all conflicting bookings for the one being approved
       const conflicts = checkConflicts(bookingToApprove);
-      
+
       // Approve the selected booking
       await bookingsAPI.approveBooking(bookingToApprove._id);
-      
+
       // Reject all conflicting bookings
-      const rejectionPromises = conflicts.map(conflict => 
+      const rejectionPromises = conflicts.map(conflict =>
         bookingsAPI.rejectBooking(
-          conflict._id, 
+          conflict._id,
           `Booking rejected due to time slot conflict. Another booking for the same venue and time has been approved.`
         )
       );
-      
+
       await Promise.all(rejectionPromises);
-      
+
       setShowConflictsModal(false);
       setSelectedBookingForConflicts(null);
       setConflictingBookings([]);
-      
+
       setPopup({
         isOpen: true,
         type: 'success',
@@ -295,17 +305,17 @@ export default function PendingApprovals() {
         bookingToReject._id,
         'Booking rejected by admin after reviewing conflicting requests.'
       );
-      
+
       // Remove from conflicts list
       setConflictingBookings(prev => prev.filter(b => b._id !== bookingToReject._id));
-      
+
       // If this was the selected booking, close modal
       if (selectedBookingForConflicts._id === bookingToReject._id) {
         setShowConflictsModal(false);
         setSelectedBookingForConflicts(null);
         setConflictingBookings([]);
       }
-      
+
       setPopup({
         isOpen: true,
         type: 'success',
@@ -369,7 +379,7 @@ export default function PendingApprovals() {
             </div>
           )}
         </div>
-        
+
         {/* Legend with Filters */}
         <div className="bg-white rounded-xl shadow-md p-4 mb-6">
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Request Types (Click to filter):</h2>
@@ -379,16 +389,15 @@ export default function PendingApprovals() {
               const TypeIcon = config.icon;
               const isActive = activeFilters.includes(type);
               const isLastActive = isActive && activeFilters.length === 1;
-              
+
               return (
                 <button
                   key={type}
                   onClick={() => toggleFilter(type)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                    isActive 
-                      ? `bg-white border-2 ${isLastActive ? 'border-green-400' : 'border-gray-300'} shadow-sm hover:shadow-md` 
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${isActive
+                      ? `bg-white border-2 ${isLastActive ? 'border-green-400' : 'border-gray-300'} shadow-sm hover:shadow-md`
                       : 'bg-gray-100 border-2 border-transparent opacity-40 hover:opacity-60'
-                  } ${isLastActive ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                    } ${isLastActive ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                   title={isLastActive ? 'At least one filter must be selected' : `Click to ${isActive ? 'hide' : 'show'} ${config.label} requests`}
                 >
                   <div className={`w-4 h-4 rounded ${config.legendColor} ${isActive ? '' : 'opacity-50'}`}></div>
@@ -427,117 +436,118 @@ export default function PendingApprovals() {
               const userType = booking.userId?.type || 'student';
               const config = getUserTypeConfig(userType);
               const TypeIcon = config.icon;
-              
+
               return (
-              <div 
-                key={booking._id} 
-                className={`rounded-xl shadow-md p-6 hover:shadow-lg transition ${config.bgColor} ${config.ringColor} ${hasConflicts(booking) ? 'border-2 border-red-500' : ''}`}
-              >
-                {hasConflicts(booking) && (
-                  <div className="flex items-center gap-2 mb-3 bg-red-100 text-red-800 px-3 py-2 rounded-lg w-fit">
-                    <AlertTriangle className="w-5 h-5" />
-                    <span className="font-semibold text-sm">Conflicting Time Slot Detected!</span>
+                <div
+                  key={booking._id}
+                  className={`rounded-xl shadow-md p-6 hover:shadow-lg transition ${config.bgColor} ${config.ringColor} ${hasConflicts(booking) ? 'border-2 border-red-500' : ''}`}
+                >
+                  {hasConflicts(booking) && (
+                    <div className="flex items-center gap-2 mb-3 bg-red-100 text-red-800 px-3 py-2 rounded-lg w-fit">
+                      <AlertTriangle className="w-5 h-5" />
+                      <span className="font-semibold text-sm">Conflicting Time Slot Detected!</span>
+                    </div>
+                  )}
+
+                  {config.priority && (
+                    <div className={`flex items-center gap-2 mb-3 ${config.badgeBg} ${config.badgeText} px-3 py-2 rounded-lg w-fit`}>
+                      <TypeIcon className="w-5 h-5" />
+                      <span className="font-semibold text-sm">{config.label} Request - {config.priority}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-800">{booking.venueId?.name || 'Venue'}</h3>
+                      <p className="text-gray-600 flex items-center gap-1 mt-1">
+                        <MapPin className="w-4 h-4" />
+                        {booking.venueId?.location || 'Location'}
+                      </p>
+                    </div>
+                    <div className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
+                      Pending Review
+                    </div>
                   </div>
-                )}
-                
-                {config.priority && (
-                  <div className={`flex items-center gap-2 mb-3 ${config.badgeBg} ${config.badgeText} px-3 py-2 rounded-lg w-fit`}>
-                    <TypeIcon className="w-5 h-5" />
-                    <span className="font-semibold text-sm">{config.label} Request - {config.priority}</span>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="flex items-center gap-2 text-gray-700">
+                      <User className="w-5 h-5 text-emerald-600" />
+                      <span>{booking.userId?.name}</span>
+                      <span className={`text-xs ${config.smallBadgeBg} ${config.smallBadgeText} px-2 py-0.5 rounded-full font-medium flex items-center gap-1`}>
+                        <TypeIcon className="w-3 h-3" />
+                        {config.label}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-700">
+                      <span className="text-sm text-gray-500">{booking.userId?.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-700">
+                      <Calendar className="w-5 h-5 text-emerald-600" />
+                      <span>{formatDate(booking.startTime)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-700">
+                      <Clock className="w-5 h-5 text-emerald-600" />
+                      <span>{formatTime(booking.startTime)} - {formatTime(booking.endTime)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-700">
+                      <FileText className="w-5 h-5 text-emerald-600" />
+                      <span>{booking.durationHours} hours ({booking.pricingType})</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-700 font-semibold">
+                      <span>{booking.currency} {booking.price}</span>
+                    </div>
                   </div>
-                )}
-                
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-800">{booking.venueId?.name || 'Venue'}</h3>
-                    <p className="text-gray-600 flex items-center gap-1 mt-1">
-                      <MapPin className="w-4 h-4" />
-                      {booking.venueId?.location || 'Location'}
+
+                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600">
+                      <span className="font-medium">Purpose:</span> {booking.purpose}
                     </p>
                   </div>
-                  <div className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
-                    Pending Review
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div className="flex items-center gap-2 text-gray-700">
-                    <User className="w-5 h-5 text-emerald-600" />
-                    <span>{booking.userId?.name}</span>
-                    <span className={`text-xs ${config.smallBadgeBg} ${config.smallBadgeText} px-2 py-0.5 rounded-full font-medium flex items-center gap-1`}>
-                      <TypeIcon className="w-3 h-3" />
-                      {config.label}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-700">
-                    <span className="text-sm text-gray-500">{booking.userId?.email}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-700">
-                    <Calendar className="w-5 h-5 text-emerald-600" />
-                    <span>{formatDate(booking.startTime)}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-700">
-                    <Clock className="w-5 h-5 text-emerald-600" />
-                    <span>{formatTime(booking.startTime)} - {formatTime(booking.endTime)}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-700">
-                    <FileText className="w-5 h-5 text-emerald-600" />
-                    <span>{booking.durationHours} hours ({booking.pricingType})</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-700 font-semibold">
-                    <span>{booking.currency} {booking.price}</span>
-                  </div>
-                </div>
+                  <div className="flex flex-wrap gap-2">
+                    {hasConflicts(booking) && (
+                      <button
+                        onClick={() => handleViewConflicts(booking)}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition text-sm font-medium border-2 border-red-300"
+                      >
+                        <AlertTriangle className="w-4 h-4" />
+                        View Conflicts ({checkConflicts(booking).length})
+                      </button>
+                    )}
 
-                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">Purpose:</span> {booking.purpose}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {hasConflicts(booking) && (
                     <button
-                      onClick={() => handleViewConflicts(booking)}
-                      className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition text-sm font-medium border-2 border-red-300"
+                      onClick={() => handleDownloadDocument(booking._id)}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition text-sm font-medium"
                     >
-                      <AlertTriangle className="w-4 h-4" />
-                      View Conflicts ({checkConflicts(booking).length})
+                      <Download className="w-4 h-4" />
+                      View Permission Document
                     </button>
-                  )}
-                  
-                  <button
-                    onClick={() => handleDownloadDocument(booking._id)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition text-sm font-medium"
-                  >
-                    <Download className="w-4 h-4" />
-                    View Permission Document
-                  </button>
 
-                  <button
-                    onClick={() => {
-                      setSelectedBooking(booking)
-                      setShowApproveModal(true)
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    Approve Booking
-                  </button>
+                    <button
+                      onClick={() => {
+                        setSelectedBooking(booking)
+                        setShowApproveModal(true)
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      Approve Booking
+                    </button>
 
-                  <button
-                    onClick={() => {
-                      setSelectedBooking(booking)
-                      setShowRejectModal(true)
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-medium"
-                  >
-                    <XCircle className="w-4 h-4" />
-                    Reject Booking
-                  </button>
+                    <button
+                      onClick={() => {
+                        setSelectedBooking(booking)
+                        setShowRejectModal(true)
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-medium"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Reject Booking
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )})}
+              )
+            })}
           </div>
         )}
       </div>
@@ -547,7 +557,7 @@ export default function PendingApprovals() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Approve Booking</h2>
-            
+
             {selectedBooking && (
               <div className="mb-4 p-3 bg-gray-50 rounded-lg">
                 <p className="text-sm text-gray-700 mb-2">
@@ -561,11 +571,11 @@ export default function PendingApprovals() {
                 </p>
               </div>
             )}
-            
+
             <p className="text-gray-600 mb-4">
               Are you sure you want to approve this booking?
             </p>
-            
+
             <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
@@ -582,13 +592,13 @@ export default function PendingApprovals() {
                 </div>
               </label>
             </div>
-            
+
             <p className="text-sm text-gray-500 mb-6">
-              {waiveCharges 
+              {waiveCharges
                 ? '✓ User will be notified that the booking is confirmed with no payment required.'
                 : 'User will be notified to complete the payment.'}
             </p>
-            
+
             <div className="flex gap-2">
               <button
                 onClick={handleApprove}
@@ -750,7 +760,7 @@ export default function PendingApprovals() {
                     const conflictUserType = conflict.userId?.type || 'student';
                     const conflictConfig = getUserTypeConfig(conflictUserType);
                     const ConflictIcon = conflictConfig.icon;
-                    
+
                     return (
                       <div key={conflict._id} className="bg-red-50 border-2 border-red-300 rounded-xl p-4">
                         <div className="flex justify-between items-start mb-3">
@@ -819,7 +829,7 @@ export default function PendingApprovals() {
 
               <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-sm text-amber-800">
-                  <span className="font-semibold">⚠️ Important:</span> Approving any booking will automatically reject all conflicting bookings for the same time slot. 
+                  <span className="font-semibold">⚠️ Important:</span> Approving any booking will automatically reject all conflicting bookings for the same time slot.
                   Consider the priority levels and user types when making your decision.
                 </p>
               </div>
