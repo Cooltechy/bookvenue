@@ -8,21 +8,37 @@ class UniversityService {
 
   async getUserByEmail(email) {
     try {
-      const response = await axios.get(
-        `${this.apiUrl}/api/users/email/${email}`,
-        {
-          headers: {
-            'x-api-key': this.apiKey
+      let response;
+      let retries = 3;
+
+      while (retries > 0) {
+        try {
+          response = await axios.get(
+            `${this.apiUrl}/api/users/email/${email}`,
+            {
+              headers: {
+                'x-api-key': this.apiKey
+              },
+              timeout: 30000 // Force 30s timeout per attempt
+            }
+          );
+          break; // Success
+        } catch (err) {
+          if (err.response && err.response.status === 404) {
+            return null; // Return null natively for 404
           }
+          retries--;
+          console.error(`University DB fetch failed. Retries left: ${retries}. Error:`, err.message);
+          if (retries === 0) throw err;
+
+          // Wait 3 seconds before retrying to let the Render cold-start finish
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
-      );
-      
+      }
+
       return response.data.user;
     } catch (error) {
-      if (error.response && error.response.status === 404) {
-        return null;
-      }
-      console.error('Error fetching user from university DB:', error.message);
+      console.error('Final error fetching user from university DB:', error.message);
       throw new Error('Unable to connect to university database');
     }
   }
