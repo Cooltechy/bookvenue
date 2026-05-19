@@ -9,7 +9,7 @@ class UniversityService {
   async getUserByEmail(email) {
     try {
       let response;
-      let retries = 3;
+      let retries = 6;
 
       while (retries > 0) {
         try {
@@ -19,7 +19,7 @@ class UniversityService {
               headers: {
                 'x-api-key': this.apiKey
               },
-              timeout: 30000 // Force 30s timeout per attempt
+              timeout: 10000 // 10s timeout to fail fast on Render's initial proxy drop
             }
           );
           break; // Success
@@ -31,8 +31,8 @@ class UniversityService {
           console.error(`University DB fetch failed. Retries left: ${retries}. Error:`, err.message);
           if (retries === 0) throw err;
 
-          // Wait 3 seconds before retrying to let the Render cold-start finish
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          // Wait 10 seconds before retrying (Render takes up to 60s to wake up)
+          await new Promise(resolve => setTimeout(resolve, 10000));
         }
       }
 
